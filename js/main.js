@@ -9,16 +9,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Initialize tab navigation
     initializeTabs();
     
-    // Load and display current market data
-    await loadMarketData();
-    
-    // Initialize all modules
-    await Promise.all([
-        IndicatorsManager.initialize(),
-        SignalsManager.initialize(),
-        TradeTracker.initialize(),
-        LeadingIndicators.initialize()
-    ]);
+    undefined
     
     // Set up periodic updates (every 5 minutes)
     setInterval(loadMarketData, 5 * 60 * 1000);
