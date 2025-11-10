@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dogecoin Trading Analysis Platform</title>
+    <link rel="stylesheet" href="./css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@3.0.0/index.min.js"></script>
+    <style>
+        /* Critical inline CSS fallback - ensures page looks good even if external CSS fails to load */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary-color: #c3a13a;
+            --dark-bg: #0f1419;
+            --card-bg: #1a1f2e;
+            --text-primary: #ffffff;
+            --success-color: #10b981;
+        }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--dark-bg);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background: var(--card-bg);
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: var(--primary-color);
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+        .tab-nav {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        .tab-btn {
+            padding: 12px 24px;
+            background: var(--card-bg);
+            color: var(--text-primary);
+            border: 2px solid transparent;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+        .tab-btn:hover, .tab-btn.active {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .data-status-banner {
+            background: var(--card-bg);
+            padding: 15px 25px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .chart-container {
+            background: var(--card-bg);
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        h2, h3 {
+            color: var(--primary-color);
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Data Status Banner -->
+        <div class="data-status-banner" id="dataStatusBanner">
+            <div class="status-icon" id="statusIcon">
+                <i class="fas fa-spinner fa-spin"></i>
+            </div>
+            <div class="status-content">
+                <div class="status-title" id="statusTitle">Loading market data...</div>
+                <div class="status-subtitle" id="statusSubtitle">Connecting to data sources</div>
+            </div>
+            <div class="status-timestamp" id="statusTimestamp">--:--:--</div>
+        </div>
+
+        <header>
+            <div class="header-content">
+                <h1><i class="fab fa-dogecoin"></i> Dogecoin Trading Analysis Platform</h1>
+                <p class="subtitle">Personal Trading Strategy & Backtesting Tool</p>
+            </div>
+            <div class="header-stats">
+                <div class="stat-card">
+                    <span class="stat-label">Current Price</span>
+                    <span class="stat-value" id="currentPrice">Loading...</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">24h Change</span>
+                    <span class="stat-value" id="priceChange">Loading...</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">24h Volume</span>
+                    <span class="stat-value" id="volume24h">Loading...</span>
+                </div>
+                <div class="stat-card manual-price-input">
+                    <span class="stat-label">Manual Price Override</span>
+                    <div class="manual-input-group">
+                        <input type="number" id="manualPriceInput" step="0.00001" placeholder="Enter price from your exchange" min="0">
+                        <button onclick="setManualPrice()" class="btn-manual">Set</button>
+                        <button onclick="clearManualPrice()" class="btn-manual-clear" title="Clear and use API data">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <small style="color: var(--text-secondary); font-size: 0.75rem; display: block; margin-top: 5px;">
+                        Use if APIs fail - enter current DOGE price from your exchange
+                    </small>
+                </div>
+            </div>
+        </header>
+
+        <nav class="tab-nav">
+            <button class="tab-btn active" data-tab="overview">Overview</button>
+            <button class="tab-btn" data-tab="leading">🔮 Leading Indicators</button>
+            <button class="tab-btn" data-tab="factors">Market Factors</button>
+            <button class="tab-btn" data-tab="backtest">Backtest Strategies</button>
+            <button class="tab-btn" data-tab="signals">Trading Signals</button>
+            <button class="tab-btn" data-tab="tracker">Trade Tracker</button>
+        </nav>
+
+        <!-- Overview Tab -->
+        <div class="tab-content active" id="overview-tab">
+            <div class="dashboard-grid">
+                <div class="chart-container">
+                    <h2>Dogecoin Price History (5 Years)</h2>
+                    <div style="height: 400px;">
+                        <canvas id="priceChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <h2>Volatility Analysis</h2>
+                    <div style="height: 400px;">
+                        <canvas id="volatilityChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="info-panel">
+                    <h3>Key Trading Insights</h3>
+                    <div class="insights-grid">
+                        <div class="insight-card">
+                            <i class="fas fa-chart-line"></i>
+                            <h4>Average Daily Volatility</h4>
+                            <p id="avgVolatility">Calculating...</p>
+                        </div>
+                        <div class="insight-card">
+                            <i class="fas fa-clock"></i>
+                            <h4>Best Trading Hours</h4>
+                            <p id="bestHours">Analyzing...</p>
+                        </div>
+                        <div class="insight-card">
+                            <i class="fas fa-percentage"></i>
+                            <h4>Success Rate (5-10%)</h4>
+                            <p id="successRate">Calculating...</p>
+                        </div>
+                        <div class="insight-card">
+                            <i class="fas fa-trophy"></i>
+                            <h4>Optimal Strategy</h4>
+                            <p id="optimalStrategy">Analyzing...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Leading Indicators Tab -->
+        <div class="tab-content" id="leading-tab">
+            <div class="leading-intro">
+                <h2>🔮 Predictive Leading Indicators</h2>
+                <p class="subtitle">See market-moving factors BEFORE price reacts. These indicators predict moves 1-24 hours in advance.</p>
+                <div class="leading-score-badge" id="leadingScoreBadge">
+                    <i class="fas fa-bolt"></i>
+                    <span>Leading: --/100</span>
+                </div>
+            </div>
+
+            <div class="leading-grid">
+                <!-- Combined Leading Score -->
+                <div class="leading-panel full-width">
+                    <h3><i class="fas fa-tachometer-alt"></i> Combined Predictive Score</h3>
+                    <div id="leadingScoreDisplay">
+                        <p class="loading">Calculating leading indicators...</p>
+                    </div>
+                </div>
+
+                <!-- Elon Musk Monitor -->
+                <div class="leading-panel">
+                    <h3><i class="fab fa-twitter"></i> Elon Musk Activity</h3>
+                    <p class="panel-description">Tracks @elonmusk mentions of "doge" - historically causes 20-50% moves</p>
+                    <div id="elonActivity">
+                        <p class="loading">Monitoring Twitter activity...</p>
+                    </div>
+                </div>
+
+                <!-- Whale Movements -->
+                <div class="leading-panel">
+                    <h3><i class="fas fa-whale"></i> Whale Movements</h3>
+                    <p class="panel-description">Large transactions (>50M DOGE) predict accumulation/distribution</p>
+                    <div id="whaleMovements">
+                        <p class="loading">Tracking whale activity...</p>
+                    </div>
+                </div>
+
+                <!-- Fear & Greed Index -->
+                <div class="leading-panel">
+                    <h3><i class="fas fa-heart-pulse"></i> Fear & Greed Index</h3>
+                    <p class="panel-description">Extreme fear = buy opportunity, Extreme greed = sell signal</p>
+                    <div id="fearGreedIndex">
+                        <p class="loading">Loading sentiment data...</p>
+                    </div>
+                </div>
+
+                <!-- Social Sentiment -->
+                <div class="leading-panel">
+                    <h3><i class="fas fa-comments"></i> Social Sentiment</h3>
+                    <p class="panel-description">Twitter/Reddit buzz spikes 2-6 hours before major moves</p>
+                    <div id="socialSentiment">
+                        <div class="sentiment-metric">
+                            <span class="metric-label">Sentiment Score:</span>
+                            <span class="metric-value" id="sentimentScore">--</span>
+                        </div>
+                        <div class="sentiment-metric">
+                            <span class="metric-label">Trend:</span>
+                            <span class="metric-value" id="sentimentTrend">--</span>
+                        </div>
+                        <div class="sentiment-metric">
+                            <span class="metric-label">Volume Spike:</span>
+                            <span class="metric-value" id="volumeSpike">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bitcoin Correlation -->
+                <div class="leading-panel">
+                    <h3><i class="fab fa-bitcoin"></i> Bitcoin Correlation</h3>
+                    <p class="panel-description">DOGE follows BTC 60-70% of time, amplifying moves by 1.5-2x</p>
+                    <div id="bitcoinCorrelation">
+                        <div class="btc-metric">
+                            <span class="metric-label">BTC Price:</span>
+                            <span class="metric-value" id="btcPrice">--</span>
+                        </div>
+                        <div class="btc-metric">
+                            <span class="metric-label">24h Change:</span>
+                            <span class="metric-value" id="btcChange">--</span>
+                        </div>
+                        <div class="btc-metric">
+                            <span class="metric-label">Key Level:</span>
+                            <span class="metric-value" id="btcKeyLevel">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Economic Calendar -->
+                <div class="leading-panel">
+                    <h3><i class="fas fa-calendar-alt"></i> Economic Calendar</h3>
+                    <p class="panel-description">Fed meetings, CPI reports cause macro crypto volatility</p>
+                    <div id="economicCalendar">
+                        <p class="loading">Loading upcoming events...</p>
+                    </div>
+                </div>
+
+                <!-- Exchange Flows -->
+                <div class="leading-panel">
+                    <h3><i class="fas fa-exchange-alt"></i> Exchange Flows</h3>
+                    <p class="panel-description">Decreasing reserves = accumulation phase (bullish)</p>
+                    <div id="exchangeFlows">
+                        <div class="flow-metric">
+                            <span class="metric-label">Binance Reserves:</span>
+                            <span class="metric-value" id="binanceReserves">--</span>
+                        </div>
+                        <div class="flow-metric">
+                            <span class="metric-label">24h Change:</span>
+                            <span class="metric-value" id="flowChange24h">--</span>
+                        </div>
+                        <div class="flow-metric">
+                            <span class="metric-label">Trend:</span>
+                            <span class="metric-value" id="flowTrend">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Funding Rates -->
+                <div class="leading-panel">
+                    <h3><i class="fas fa-percentage"></i> Funding Rates</h3>
+                    <p class="panel-description">Extreme positive = overcrowded longs (dump risk)</p>
+                    <div id="fundingRates">
+                        <div class="funding-metric">
+                            <span class="metric-label">Current Rate:</span>
+                            <span class="metric-value" id="fundingRate">--</span>
+                        </div>
+                        <div class="funding-metric">
+                            <span class="metric-label">Status:</span>
+                            <span class="metric-value" id="fundingStatus">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="leading-explanation">
+                <h3>💡 How to Use Leading Indicators</h3>
+                <div class="explanation-grid">
+                    <div class="explain-card">
+                        <h4>🟢 Score 65-100 (Strong Buy)</h4>
+                        <ul>
+                            <li>Multiple bullish factors aligned</li>
+                            <li>Consider entering position</li>
+                            <li>Wait for lagging confirmation</li>
+                        </ul>
+                    </div>
+                    <div class="explain-card">
+                        <h4>🟡 Score 45-64 (Neutral/Weak Buy)</h4>
+                        <ul>
+                            <li>Mixed signals or weak factors</li>
+                            <li>Wait for clearer setup</li>
+                            <li>Monitor for changes</li>
+                        </ul>
+                    </div>
+                    <div class="explain-card">
+                        <h4>🟠 Score 36-44 (Weak Sell)</h4>
+                        <ul>
+                            <li>Some bearish factors present</li>
+                            <li>Consider reducing position</li>
+                            <li>Tighten stop losses</li>
+                        </ul>
+                    </div>
+                    <div class="explain-card">
+                        <h4>🔴 Score 0-35 (Strong Sell)</h4>
+                        <ul>
+                            <li>Multiple bearish factors</li>
+                            <li>Exit positions or avoid entering</li>
+                            <li>Wait for score improvement</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Market Factors Tab -->
+        <div class="tab-content" id="factors-tab">
+            <div class="factors-grid">
+                <div class="factor-panel">
+                    <h2><i class="fas fa-cogs"></i> Technical Indicators</h2>
+                    <div class="indicator-list">
+                        <div class="indicator-item">
+                            <div class="indicator-header">
+                                <span class="indicator-name">RSI (Relative Strength Index)</span>
+                                <span class="indicator-value" id="rsiValue">--</span>
+                            </div>
+                            <div class="indicator-bar">
+                                <div class="indicator-fill" id="rsiFill"></div>
+                            </div>
+                            <span class="indicator-status" id="rsiStatus">Calculating...</span>
+                        </div>
+
+                        <div class="indicator-item">
+                            <div class="indicator-header">
+                                <span class="indicator-name">MACD Signal</span>
+                                <span class="indicator-value" id="macdValue">--</span>
+                            </div>
+                            <span class="indicator-status" id="macdStatus">Calculating...</span>
+                        </div>
+
+                        <div class="indicator-item">
+                            <div class="indicator-header">
+                                <span class="indicator-name">Moving Average (50/200)</span>
+                                <span class="indicator-value" id="maValue">--</span>
+                            </div>
+                            <span class="indicator-status" id="maStatus">Calculating...</span>
+                        </div>
+
+                        <div class="indicator-item">
+                            <div class="indicator-header">
+                                <span class="indicator-name">Bollinger Bands Position</span>
+                                <span class="indicator-value" id="bbValue">--</span>
+                            </div>
+                            <span class="indicator-status" id="bbStatus">Calculating...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="factor-panel">
+                    <h2><i class="fas fa-chart-bar"></i> Market Conditions</h2>
+                    <div class="indicator-list">
+                        <div class="indicator-item">
+                            <div class="indicator-header">
+                                <span class="indicator-name">24h Volume Trend</span>
+                                <span class="indicator-value" id="volumeTrend">--</span>
+                            </div>
+                            <span class="indicator-status" id="volumeStatus">Analyzing...</span>
+                        </div>
+
+                        <div class="indicator-item">
+                            <div class="indicator-header">
+                                <span class="indicator-name">Price Momentum</span>
+                                <span class="indicator-value" id="momentum">--</span>
+                            </div>
+                            <span class="indicator-status" id="momentumStatus">Analyzing...</span>
+                        </div>
+
+                        <div class="indicator-item">
+                            <div class="indicator-header">
+                                <span class="indicator-name">Bitcoin Correlation</span>
+                                <span class="indicator-value" id="btcCorrelation">--</span>
+                            </div>
+                            <span class="indicator-status" id="btcStatus">Analyzing...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chart-container full-width">
+                    <h2>Factor Impact Analysis (5-Year Backtest)</h2>
+                    <div style="height: 400px;">
+                        <canvas id="factorChart"></canvas>
+                    </div>
+                    <p class="chart-description">This chart shows which factors historically correlate with successful 5-10% swing trades</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Backtest Strategies Tab -->
+        <div class="tab-content" id="backtest-tab">
+            <div class="backtest-controls">
+                <h2>Strategy Backtesting Configuration</h2>
+                <div class="controls-grid">
+                    <div class="control-group">
+                        <label>Backtest Period</label>
+                        <select id="backtestPeriod">
+                            <option value="1">1 Year</option>
+                            <option value="2">2 Years</option>
+                            <option value="3">3 Years</option>
+                            <option value="5" selected>5 Years</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label>Initial Capital ($)</label>
+                        <input type="number" id="initialCapital" value="10000" min="100">
+                    </div>
+                    <div class="control-group">
+                        <label>Strategy Type</label>
+                        <select id="strategyType">
+                            <option value="moderate">5-10% Swing Trades</option>
+                            <option value="frequent">2-3% Frequent Trades</option>
+                            <option value="aggressive">1-2% High Frequency</option>
+                            <option value="conservative">10-15% Conservative</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <button class="btn-primary" onclick="runBacktest()">
+                            <i class="fas fa-play"></i> Run Backtest
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="results-container" id="backtestResults" style="display: none;">
+                <h2>Backtest Results</h2>
+                <div class="results-grid">
+                    <div class="result-card">
+                        <i class="fas fa-dollar-sign"></i>
+                        <h3>Final Portfolio Value</h3>
+                        <p class="result-value" id="finalValue">$0</p>
+                        <span class="result-change" id="portfolioChange">+0%</span>
+                    </div>
+                    <div class="result-card">
+                        <i class="fas fa-chart-line"></i>
+                        <h3>Total Return</h3>
+                        <p class="result-value" id="totalReturn">0%</p>
+                    </div>
+                    <div class="result-card">
+                        <i class="fas fa-exchange-alt"></i>
+                        <h3>Total Trades</h3>
+                        <p class="result-value" id="totalTrades">0</p>
+                        <span class="result-change" id="winRate">Win Rate: 0%</span>
+                    </div>
+                    <div class="result-card">
+                        <i class="fas fa-calendar-alt"></i>
+                        <h3>Avg Trade Duration</h3>
+                        <p class="result-value" id="avgDuration">0 days</p>
+                    </div>
+                    <div class="result-card">
+                        <i class="fas fa-trophy"></i>
+                        <h3>Best Trade</h3>
+                        <p class="result-value" id="bestTrade">+0%</p>
+                    </div>
+                    <div class="result-card">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <h3>Worst Trade</h3>
+                        <p class="result-value" id="worstTrade">-0%</p>
+                    </div>
+                    <div class="result-card">
+                        <i class="fas fa-chart-area"></i>
+                        <h3>Max Drawdown</h3>
+                        <p class="result-value" id="maxDrawdown">0%</p>
+                    </div>
+                    <div class="result-card">
+                        <i class="fas fa-percentage"></i>
+                        <h3>Sharpe Ratio</h3>
+                        <p class="result-value" id="sharpeRatio">0.00</p>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <h3>Portfolio Growth Over Time</h3>
+                    <div style="height: 400px;">
+                        <canvas id="portfolioChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="comparison-container">
+                    <h3>Strategy Comparison</h3>
+                    <div style="height: 400px;">
+                        <canvas id="comparisonChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trading Signals Tab -->
+        <div class="tab-content" id="signals-tab">
+            <div class="signals-container">
+                <div class="signal-panel active-signals">
+                    <h2><i class="fas fa-signal"></i> Active Trading Signals</h2>
+                    <div id="activeSignals">
+                        <p class="loading">Analyzing market conditions...</p>
+                    </div>
+                </div>
+
+                <div class="signal-panel entry-exit">
+                    <h2><i class="fas fa-crosshairs"></i> Entry/Exit Calculator</h2>
+                    <div class="calculator-form">
+                        <div class="form-group">
+                            <label>Entry Price ($)</label>
+                            <input type="number" id="entryPrice" step="0.00001" placeholder="Current: Loading...">
+                        </div>
+                        <div class="form-group">
+                            <label>Target Profit (%)</label>
+                            <input type="number" id="targetProfit" value="7.5" min="0.5" step="0.5">
+                        </div>
+                        <div class="form-group">
+                            <label>Stop Loss (%)</label>
+                            <input type="number" id="stopLoss" value="3" min="0.5" step="0.5">
+                        </div>
+                        <div class="form-group">
+                            <label>Position Size ($)</label>
+                            <input type="number" id="positionSize" value="1000" min="10">
+                        </div>
+                        <button class="btn-primary" onclick="calculateTargets()">
+                            <i class="fas fa-calculator"></i> Calculate Targets
+                        </button>
+                    </div>
+                    <div class="calculator-results" id="calculatorResults" style="display: none;">
+                        <div class="result-row">
+                            <span>Target Exit Price:</span>
+                            <strong id="targetExit">$0</strong>
+                        </div>
+                        <div class="result-row">
+                            <span>Stop Loss Price:</span>
+                            <strong id="stopLossPrice">$0</strong>
+                        </div>
+                        <div class="result-row">
+                            <span>Potential Profit:</span>
+                            <strong class="profit" id="potentialProfit">$0</strong>
+                        </div>
+                        <div class="result-row">
+                            <span>Potential Loss:</span>
+                            <strong class="loss" id="potentialLoss">$0</strong>
+                        </div>
+                        <div class="result-row">
+                            <span>Risk/Reward Ratio:</span>
+                            <strong id="riskReward">1:0</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="signal-panel signal-history">
+                    <h2><i class="fas fa-history"></i> Recent Signals (24h)</h2>
+                    <div id="recentSignals">
+                        <p class="loading">Loading signal history...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trade Tracker Tab -->
+        <div class="tab-content" id="tracker-tab">
+            <div class="tracker-container">
+                <div class="tracker-header">
+                    <h2><i class="fas fa-clipboard-list"></i> Trade Journal</h2>
+                    <button class="btn-primary" onclick="openAddTradeModal()">
+                        <i class="fas fa-plus"></i> Log New Trade
+                    </button>
+                </div>
+
+                <div class="tracker-stats">
+                    <div class="stat-box">
+                        <span class="stat-label">Total Trades</span>
+                        <span class="stat-value" id="trackerTotalTrades">0</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-label">Win Rate</span>
+                        <span class="stat-value" id="trackerWinRate">0%</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-label">Total P&L</span>
+                        <span class="stat-value" id="trackerPnL">$0</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-label">Avg Return</span>
+                        <span class="stat-value" id="trackerAvgReturn">0%</span>
+                    </div>
+                </div>
+
+                <div class="trades-table-container">
+                    <table class="trades-table" id="tradesTable">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Entry Price</th>
+                                <th>Exit Price</th>
+                                <th>Position Size</th>
+                                <th>Return %</th>
+                                <th>P&L</th>
+                                <th>Notes</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tradesTableBody">
+                            <tr>
+                                <td colspan="9" class="empty-state">No trades logged yet. Click "Log New Trade" to start tracking.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Trade Modal -->
+    <div class="modal" id="addTradeModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Log New Trade</h2>
+                <button class="close-btn" onclick="closeAddTradeModal()">&times;</button>
+            </div>
+            <form id="addTradeForm" onsubmit="submitTrade(event)">
+                <div class="form-group">
+                    <label>Trade Date</label>
+                    <input type="datetime-local" id="tradeDate" required>
+                </div>
+                <div class="form-group">
+                    <label>Trade Type</label>
+                    <select id="tradeType" required>
+                        <option value="swing">Swing Trade (5-10%)</option>
+                        <option value="frequent">Frequent Trade (2-3%)</option>
+                        <option value="scalp">Scalp Trade (1-2%)</option>
+                        <option value="hold">Position Hold (10%+)</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Entry Price ($)</label>
+                        <input type="number" id="tradeEntryPrice" step="0.00001" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Exit Price ($)</label>
+                        <input type="number" id="tradeExitPrice" step="0.00001" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Position Size ($)</label>
+                    <input type="number" id="tradePositionSize" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label>Notes (Optional)</label>
+                    <textarea id="tradeNotes" rows="3" placeholder="Market conditions, reasons for entry/exit, etc."></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" onclick="closeAddTradeModal()">Cancel</button>
+                    <button type="submit" class="btn-primary">Save Trade</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <footer>
+        <div class="disclaimer-section">
+            <h3>⚠️ IMPORTANT DISCLAIMERS</h3>
+            
+            <div class="disclaimer-grid">
+                <div class="disclaimer-item">
+                    <h4>🏠 Personal Use Only</h4>
+                    <p>This platform is shared privately with friends and family for educational and informational purposes only. Not for commercial use or public distribution.</p>
+                </div>
+                
+                <div class="disclaimer-item">
+                    <h4>📊 Not Financial Advice</h4>
+                    <p>Nothing on this platform constitutes financial, investment, legal, or tax advice. All content is for informational purposes only. We are not licensed financial advisors.</p>
+                </div>
+                
+                <div class="disclaimer-item">
+                    <h4>⚡ High Risk Warning</h4>
+                    <p>Cryptocurrency trading involves substantial risk of loss. Prices are extremely volatile. You could lose 100% of your investment. Never invest more than you can afford to lose.</p>
+                </div>
+                
+                <div class="disclaimer-item">
+                    <h4>🎯 Your Responsibility</h4>
+                    <p>You are solely responsible for your own investment decisions. Always do your own research and consult with qualified professionals before trading.</p>
+                </div>
+                
+                <div class="disclaimer-item">
+                    <h4>📉 No Guarantees</h4>
+                    <p>This platform is provided "as is" without warranties of any kind. We make no guarantees about accuracy, completeness, reliability, or profitability. Past performance does not guarantee future results.</p>
+                </div>
+                
+                <div class="disclaimer-item">
+                    <h4>🔬 Educational Tool</h4>
+                    <p>This is a personal project for learning and analysis. It is not a professional financial service. Data may be delayed, incomplete, or inaccurate. Verify all information independently.</p>
+                </div>
+            </div>
+            
+            <div class="disclaimer-agreement">
+                <p><strong>By using this platform, you acknowledge and agree to these disclaimers and assume all risks associated with cryptocurrency trading.</strong></p>
+            </div>
+            
+            <div class="disclaimer-footer">
+                <p>Built for personal use • Shared with trusted friends & family • Trade responsibly 🙏</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/data.js"></script>
+    <script src="js/indicators.js"></script>
+    <script src="js/backtest.js"></script>
+    <script src="js/signals.js"></script>
+    <script src="js/tracker.js"></script>
+    <script src="js/leading.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
