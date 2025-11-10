@@ -50,16 +50,26 @@ const LeadingIndicators = {
     },
 
     // ==================== ELON MUSK MONITOR ====================
+    // Nitter instances for RSS feed access (rotate if one fails)
+    nitterInstances: [
+        'https://nitter.net',
+        'https://nitter.poast.org',
+        'https://nitter.privacydev.net',
+        'https://nitter.1d4.us'
+    ],
+
     async fetchElonActivity() {
         try {
-            // Note: Twitter API requires authentication
-            // For demo, we'll use a simulated check or RSS feed approach
-            // In production, you'd use Twitter API v2 with bearer token
+            console.log('Checking Elon Musk activity via Nitter RSS...');
             
-            console.log('Checking Elon Musk activity...');
+            // Try to fetch real tweets from Nitter RSS
+            let tweets = await this.fetchElonTweetsViaRSS();
             
-            // Simulated data structure (replace with real API call)
-            const tweets = await this.checkElonTweetsSimulated();
+            // If Nitter fails, fall back to heuristic method
+            if (tweets.length === 0) {
+                console.log('Nitter RSS failed, using heuristic fallback...');
+                tweets = await this.checkElonTweetsSimulated();
+            }
             
             this.data.elonActivity = {
                 recentMentions: tweets.filter(t => t.mentioned),
@@ -83,12 +93,86 @@ const LeadingIndicators = {
         }
     },
 
-    // Simulated Elon tweet checker (replace with real API)
-    async checkElonTweetsSimulated() {
-        // This is a placeholder - in production, use Twitter API v2
-        // Free tier allows 500k tweets/month
+    // NEW: Fetch real tweets from Nitter RSS feed
+    async fetchElonTweetsViaRSS() {
+        // Try each Nitter instance until one works
+        for (const nitterUrl of this.nitterInstances) {
+            try {
+                const rssUrl = `${nitterUrl}/elonmusk/rss`;
+                console.log(`Trying Nitter instance: ${nitterUrl}`);
+                
+                const response = await fetch(rssUrl, {
+                    signal: AbortSignal.timeout(5000),
+                    headers: {
+                        'Accept': 'application/rss+xml, application/xml, text/xml'
+                    }
+                });
+                
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                
+                const rssText = await response.text();
+                
+                // Parse RSS XML
+                const parser = new DOMParser();
+                const xml = parser.parseFromString(rssText, 'text/xml');
+                const items = xml.querySelectorAll('item');
+                
+                if (items.length === 0) throw new Error('No tweets found');
+                
+                const tweets = [];
+                items.forEach((item, index) => {
+                    if (index >= 20) return; // Limit to last 20 tweets
+                    
+                    const title = item.querySelector('title')?.textContent || '';
+                    const pubDate = item.querySelector('pubDate')?.textContent || '';
+                    const description = item.querySelector('description')?.textContent || '';
+                    
+                    // Clean up text (remove HTML tags from description)
+                    const cleanText = description.replace(/<[^>]*>/g, '').trim();
+                    const fullText = title || cleanText;
+                    
+                    // Check for DOGE/Dogecoin mentions (case-insensitive)
+                    const dogeMentioned = /\b(doge|dogecoin|đ)\b/i.test(fullText);
+                    
+                    // Sentiment analysis based on keywords
+                    let sentiment = 'neutral';
+                    if (dogeMentioned) {
+                        const positiveWords = /\b(moon|rocket|buy|bullish|love|great|amazing|up|rise|pump)\b/i;
+                        const negativeWords = /\b(dump|sell|bearish|down|crash|drop|fall|bad)\b/i;
+                        
+                        if (positiveWords.test(fullText)) sentiment = 'positive';
+                        else if (negativeWords.test(fullText)) sentiment = 'negative';
+                        else sentiment = 'neutral';
+                    }
+                    
+                    tweets.push({
+                        date: new Date(pubDate),
+                        mentioned: dogeMentioned,
+                        text: fullText.substring(0, 200), // Limit text length
+                        sentiment: sentiment,
+                        source: 'nitter'
+                    });
+                });
+                
+                console.log(`✅ Fetched ${tweets.length} tweets from ${nitterUrl}`);
+                console.log(`DOGE mentions found: ${tweets.filter(t => t.mentioned).length}`);
+                
+                return tweets;
+                
+            } catch (error) {
+                console.warn(`❌ ${nitterUrl} failed:`, error.message);
+                continue; // Try next instance
+            }
+        }
         
-        // For now, we'll use a heuristic based on recent DOGE price action
+        // All Nitter instances failed
+        console.warn('⚠️ All Nitter instances failed');
+        return [];
+    },
+
+    // Fallback: Heuristic-based tweet detection (used when Nitter fails)
+    async checkElonTweetsSimulated() {
+        // Heuristic based on recent DOGE price action
         // If DOGE has sudden spike with high volume, likely Elon tweeted
         
         const historicalData = await DataManager.getHistoricalData(7);
@@ -105,7 +189,8 @@ const LeadingIndicators = {
                     date: recentPrices[i].date,
                     mentioned: true,
                     text: 'Potential DOGE mention detected (heuristic)',
-                    sentiment: priceChange > 0 ? 'positive' : 'negative'
+                    sentiment: priceChange > 0 ? 'positive' : 'negative',
+                    source: 'heuristic'
                 });
             }
         }
