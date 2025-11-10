@@ -326,14 +326,93 @@ const LeadingIndicators = {
     },
 
     // ==================== BITCOIN CORRELATION ====================
-      async fetchBitcoinData() {
-        try {
-            console.log('Fetching Bitcoin data...');
-            
-            // Fetch BTC price from Binance
-            const response = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT');
-            ...
+    async fetchBitcoinData() {
+        // Try multiple sources with fallback
+        const sources = [
+            {
+                name: 'CryptoCompare',
+                fetch: async () => {
+                    const response = await fetch('https://min-api.cryptocompare.com/data/pricemultifull?fsyms=BTC&tsyms=USD', {
+                        signal: AbortSignal.timeout(5000)
+                    });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const data = await response.json();
+                    const btcData = data.RAW.BTC.USD;
+                    return {
+                        price: btcData.PRICE,
+                        change24h: btcData.CHANGEPCT24HOUR,
+                        volume: btcData.VOLUME24HOURTO
+                    };
+                }
+            },
+            {
+                name: 'CoinGecko',
+                fetch: async () => {
+                    const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_vol=true&include_24hr_change=true', {
+                        signal: AbortSignal.timeout(5000)
+                    });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const data = await response.json();
+                    return {
+                        price: data.bitcoin.usd,
+                        change24h: data.bitcoin.usd_24h_change,
+                        volume: data.bitcoin.usd_24h_vol
+                    };
+                }
+            },
+            {
+                name: 'Binance (Proxy)',
+                fetch: async () => {
+                    const apiUrl = 'https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT';
+                    const proxyUrl = 'https://corsproxy.io/?';
+                    const response = await fetch(proxyUrl + encodeURIComponent(apiUrl), {
+                        signal: AbortSignal.timeout(5000)
+                    });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const data = await response.json();
+                    return {
+                        price: parseFloat(data.lastPrice),
+                        change24h: parseFloat(data.priceChangePercent),
+                        volume: parseFloat(data.volume)
+                    };
+                }
+            }
+        ];
 
+        // Try each source
+        for (const source of sources) {
+            try {
+                console.log(`Fetching Bitcoin from ${source.name}...`);
+                const data = await source.fetch();
+                
+                this.data.bitcoinCorrelation = {
+                    price: data.price,
+                    change24h: data.change24h,
+                    volume: data.volume,
+                    isBreakingUp: data.change24h > 5,
+                    isBreakingDown: data.change24h < -5,
+                    keyLevels: this.checkBTCKeyLevels(data.price)
+                };
+                
+                console.log(`✅ Bitcoin from ${source.name}:`, data.price);
+                return;
+            } catch (error) {
+                console.warn(`❌ ${source.name} failed:`, error.message);
+                continue;
+            }
+        }
+
+        // All APIs failed
+        console.warn('⚠️ All Bitcoin APIs failed');
+        this.data.bitcoinCorrelation = {
+            price: 0,
+            change24h: 0,
+            volume: 0,
+            isBreakingUp: false,
+            isBreakingDown: false,
+            keyLevels: { above: false, below: false }
+        };
+    },
 
     checkBTCKeyLevels(price) {
         const levels = [30000, 35000, 40000, 45000, 50000, 55000, 60000, 65000, 70000];
