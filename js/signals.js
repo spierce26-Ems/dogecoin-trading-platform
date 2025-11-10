@@ -5,19 +5,35 @@ const SignalsManager = {
     recentSignals: [],
 
     async initialize() {
-        await this.generateSignals();
-        this.displaySignals();
-        
-        // Update signals every 5 minutes
-        setInterval(() => {
-            this.generateSignals();
+        console.log('Initializing Trading Signals...');
+        try {
+            await this.generateSignals();
             this.displaySignals();
-        }, 5 * 60 * 1000);
+            
+            // Update signals every 5 minutes
+            setInterval(() => {
+                this.generateSignals();
+                this.displaySignals();
+            }, 5 * 60 * 1000);
+            
+            console.log('✅ Trading Signals initialized');
+        } catch (error) {
+            console.error('❌ Failed to initialize signals:', error);
+            this.displayError(error.message);
+        }
     },
 
     async generateSignals() {
-        const historicalData = await DataManager.getHistoricalData();
-        const currentPrice = historicalData[historicalData.length - 1].price;
+        try {
+            console.log('Generating trading signals...');
+            
+            const historicalData = await DataManager.getHistoricalData();
+            
+            if (!historicalData || historicalData.length === 0) {
+                throw new Error('No historical data available');
+            }
+            
+            const currentPrice = historicalData[historicalData.length - 1].price;
 
         // Calculate all indicators
         const rsi = DataManager.calculateRSI(historicalData);
@@ -228,6 +244,13 @@ const SignalsManager = {
 
         // Add to recent signals history (keep last 20)
         this.recentSignals = [...this.currentSignals, ...this.recentSignals].slice(0, 20);
+        
+        console.log(`Generated ${this.currentSignals.length} active signals`);
+        } catch (error) {
+            console.error('❌ Error generating signals:', error);
+            this.currentSignals = [];
+            throw error;
+        }
     },
 
     displaySignals() {
@@ -276,6 +299,28 @@ const SignalsManager = {
                 ` : `<small style="color: var(--text-secondary)">${new Date(signal.timestamp).toLocaleTimeString()}</small>`}
             </div>
         `;
+    },
+
+    displayError(errorMessage) {
+        const activeSignalsContainer = document.getElementById('activeSignals');
+        const recentSignalsContainer = document.getElementById('recentSignals');
+        
+        if (activeSignalsContainer) {
+            activeSignalsContainer.innerHTML = `
+                <div class="error-message" style="padding: 20px; text-align: center; color: var(--danger-color);">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 24px; margin-bottom: 10px;"></i>
+                    <p><strong>Unable to generate trading signals</strong></p>
+                    <p style="color: var(--text-secondary); font-size: 14px;">Error: ${errorMessage}</p>
+                    <p style="color: var(--text-secondary); font-size: 14px; margin-top: 10px;">
+                        Please wait for market data to load, then refresh the page.
+                    </p>
+                </div>
+            `;
+        }
+        
+        if (recentSignalsContainer) {
+            recentSignalsContainer.innerHTML = '<p class="loading">No recent signals available.</p>';
+        }
     }
 };
 
