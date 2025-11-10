@@ -1,4 +1,5 @@
 // Data Management Module - Handles fetching and caching crypto data
+// UPDATED: Multi-API fallback with CORS proxy support
 
 const DataManager = {
     cache: {
@@ -9,20 +10,34 @@ const DataManager = {
     dataSource: 'unknown', // Track which API is working
     isLiveData: false,
 
-    // Try multiple APIs with fallback
+    // CORS proxy for APIs that block browser requests
+    corsProxies: [
+        'https://corsproxy.io/?',
+        'https://api.allorigins.win/raw?url=',
+    ],
+
+    // Try multiple APIs with fallback (UPDATED with better sources)
     async getCurrentPrice() {
         const sources = [
             {
-                name: 'Binance',
-                fetch: () => this.fetchFromBinance()
+                name: 'CryptoCompare',
+                fetch: () => this.fetchFromCryptoCompare()
             },
             {
-                name: 'CoinCap',
-                fetch: () => this.fetchFromCoinCap()
+                name: 'Messari',
+                fetch: () => this.fetchFromMessari()
             },
             {
                 name: 'CoinGecko',
                 fetch: () => this.fetchFromCoinGecko()
+            },
+            {
+                name: 'Binance (Proxy)',
+                fetch: () => this.fetchFromBinanceWithProxy()
+            },
+            {
+                name: 'CoinCap (Proxy)',
+                fetch: () => this.fetchFromCoinCapWithProxy()
             }
         ];
 
@@ -55,27 +70,28 @@ const DataManager = {
         return this.generateSimulatedCurrentPrice();
     },
 
-    // Fetch from Binance API
-    async fetchFromBinance() {
-        const response = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=DOGEUSDT', {
-            signal: AbortSignal.timeout(5000) // 5 second timeout
+    // NEW: Fetch from CryptoCompare (browser-friendly, no CORS issues)
+    async fetchFromCryptoCompare() {
+        const response = await fetch('https://min-api.cryptocompare.com/data/pricemultifull?fsyms=DOGE&tsyms=USD', {
+            signal: AbortSignal.timeout(5000)
         });
         
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         
         const data = await response.json();
+        const dogeData = data.RAW.DOGE.USD;
         
         return {
-            price: parseFloat(data.lastPrice),
-            change24h: parseFloat(data.priceChangePercent),
-            volume24h: parseFloat(data.quoteVolume),
+            price: dogeData.PRICE,
+            change24h: dogeData.CHANGEPCT24HOUR,
+            volume24h: dogeData.VOLUME24HOURTO,
             timestamp: Date.now()
         };
     },
 
-    // Fetch from CoinCap API
-    async fetchFromCoinCap() {
-        const response = await fetch('https://api.coincap.io/v2/assets/dogecoin', {
+    // NEW: Fetch from Messari (browser-friendly, no CORS issues)
+    async fetchFromMessari() {
+        const response = await fetch('https://data.messari.io/api/v1/assets/dogecoin/metrics', {
             signal: AbortSignal.timeout(5000)
         });
         
@@ -85,14 +101,14 @@ const DataManager = {
         const data = json.data;
         
         return {
-            price: parseFloat(data.priceUsd),
-            change24h: parseFloat(data.changePercent24Hr),
-            volume24h: parseFloat(data.volumeUsd24Hr),
+            price: data.market_data.price_usd,
+            change24h: data.market_data.percent_change_usd_last_24_hours,
+            volume24h: data.market_data.real_volume_last_24_hours,
             timestamp: Date.now()
         };
     },
 
-    // Fetch from CoinGecko API
+    // Fetch from CoinGecko (direct, sometimes works)
     async fetchFromCoinGecko() {
         const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=dogecoin&vs_currencies=usd&include_24hr_vol=true&include_24hr_change=true', {
             signal: AbortSignal.timeout(5000)
@@ -108,6 +124,89 @@ const DataManager = {
             volume24h: data.dogecoin.usd_24h_vol,
             timestamp: Date.now()
         };
+    },
+
+    // UPDATED: Fetch from Binance with CORS proxy
+    async fetchFromBinanceWithProxy() {
+        const apiUrl = 'https://api.binance.com/api/v3/ticker/24hr?symbol=DOGEUSDT';
+        
+        // Try first proxy
+        try {
+            const proxyUrl = this.corsProxies[0];
+            const response = await fetch(proxyUrl + encodeURIComponent(apiUrl), {
+                signal: AbortSignal.timeout(5000)
+            });
+            
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
+            const data = await response.json();
+            
+            return {
+                price: parseFloat(data.lastPrice),
+                change24h: parseFloat(data.priceChangePercent),
+                volume24h: parseFloat(data.quoteVolume),
+                timestamp: Date.now()
+            };
+        } catch (error) {
+            // Try second proxy
+            const proxyUrl = this.corsProxies[1];
+            const response = await fetch(proxyUrl + encodeURIComponent(apiUrl), {
+                signal: AbortSignal.timeout(5000)
+            });
+            
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
+            const data = await response.json();
+            
+            return {
+                price: parseFloat(data.lastPrice),
+                change24h: parseFloat(data.priceChangePercent),
+                volume24h: parseFloat(data.quoteVolume),
+                timestamp: Date.now()
+            };
+        }
+    },
+
+    // UPDATED: Fetch from CoinCap with CORS proxy
+    async fetchFromCoinCapWithProxy() {
+        const apiUrl = 'https://api.coincap.io/v2/assets/dogecoin';
+        
+        try {
+            const proxyUrl = this.corsProxies[0];
+            const response = await fetch(proxyUrl + encodeURIComponent(apiUrl), {
+                signal: AbortSignal.timeout(5000)
+            });
+            
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
+            const json = await response.json();
+            const data = json.data;
+            
+            return {
+                price: parseFloat(data.priceUsd),
+                change24h: parseFloat(data.changePercent24Hr),
+                volume24h: parseFloat(data.volumeUsd24Hr),
+                timestamp: Date.now()
+            };
+        } catch (error) {
+            // Try second proxy
+            const proxyUrl = this.corsProxies[1];
+            const response = await fetch(proxyUrl + encodeURIComponent(apiUrl), {
+                signal: AbortSignal.timeout(5000)
+            });
+            
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
+            const json = await response.json();
+            const data = json.data;
+            
+            return {
+                price: parseFloat(data.priceUsd),
+                change24h: parseFloat(data.changePercent24Hr),
+                volume24h: parseFloat(data.volumeUsd24Hr),
+                timestamp: Date.now()
+            };
+        }
     },
 
     // Generate simulated current price
@@ -163,7 +262,7 @@ const DataManager = {
         try {
             console.log('Fetching historical data from CoinGecko...');
             const response = await fetch(`https://api.coingecko.com/api/v3/coins/dogecoin/market_chart?vs_currency=usd&days=${days}&interval=daily`, {
-                signal: AbortSignal.timeout(10000) // 10 second timeout
+                signal: AbortSignal.timeout(10000)
             });
             
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -185,30 +284,29 @@ const DataManager = {
             console.warn('❌ CoinGecko historical data failed:', error.message);
         }
 
-        // Try CoinCap as fallback (limited to 2000 days)
-        if (days <= 2000) {
-            try {
-                console.log('Trying CoinCap for historical data...');
-                const response = await fetch(`https://api.coincap.io/v2/assets/dogecoin/history?interval=d1`, {
-                    signal: AbortSignal.timeout(10000)
-                });
-                
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                
-                const json = await response.json();
-                const historicalData = json.data.map(point => ({
-                    timestamp: point.time,
-                    date: new Date(point.time),
-                    price: parseFloat(point.priceUsd),
-                    volume: 0 // CoinCap doesn't provide volume in history
-                }));
-                
-                this.cache.historicalData = historicalData;
-                console.log('✅ Historical data loaded from CoinCap');
-                return historicalData;
-            } catch (error) {
-                console.warn('❌ CoinCap historical data failed:', error.message);
-            }
+        // Try CryptoCompare as fallback
+        try {
+            console.log('Trying CryptoCompare for historical data...');
+            const limit = Math.min(days, 2000); // CryptoCompare limit
+            const response = await fetch(`https://min-api.cryptocompare.com/data/v2/histoday?fsym=DOGE&tsym=USD&limit=${limit}`, {
+                signal: AbortSignal.timeout(10000)
+            });
+            
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
+            const json = await response.json();
+            const historicalData = json.Data.Data.map(point => ({
+                timestamp: point.time * 1000,
+                date: new Date(point.time * 1000),
+                price: point.close,
+                volume: point.volumeto
+            }));
+            
+            this.cache.historicalData = historicalData;
+            console.log('✅ Historical data loaded from CryptoCompare');
+            return historicalData;
+        } catch (error) {
+            console.warn('❌ CryptoCompare historical data failed:', error.message);
         }
 
         // All APIs failed - generate synthetic data
@@ -275,7 +373,7 @@ const DataManager = {
             const stdDev = Math.sqrt(variance);
             
             results[`${period}d`] = {
-                volatility: stdDev * 100, // Convert to percentage
+                volatility: stdDev * 100,
                 avgReturn: mean * 100
             };
         });
@@ -308,13 +406,18 @@ const DataManager = {
         return rsi;
     },
 
-    // Calculate Moving Averages
-    calculateMA(data, period) {
+    // Calculate Simple Moving Average
+    calculateSMA(data, period) {
         if (data.length < period) return null;
         
         const recentPrices = data.slice(-period).map(d => d.price);
         const sum = recentPrices.reduce((a, b) => a + b, 0);
         return sum / period;
+    },
+
+    // Calculate Moving Averages (alias for compatibility)
+    calculateMA(data, period) {
+        return this.calculateSMA(data, period);
     },
 
     // Calculate MACD
@@ -325,10 +428,10 @@ const DataManager = {
         if (!ema12 || !ema26) return null;
         
         const macd = ema12 - ema26;
-        const signal = this.calculateEMA(data.slice(-9), 9); // Signal line approximation
+        const signal = this.calculateEMA(data.slice(-9), 9);
         
         return {
-            macd: macd,
+            value: macd,
             signal: signal || macd,
             histogram: macd - (signal || macd)
         };
@@ -370,7 +473,6 @@ const DataManager = {
 
     // Identify best trading hours based on historical volatility
     analyzeTradingHours(data) {
-        // Group by hour and calculate average volatility
         const hourlyVolatility = {};
         
         for (let hour = 0; hour < 24; hour++) {
@@ -393,7 +495,6 @@ const DataManager = {
             }
         });
         
-        // Find top 3 hours
         const sortedHours = Object.entries(hourlyAvg)
             .sort((a, b) => b[1] - a[1])
             .slice(0, 3)
@@ -436,10 +537,8 @@ const DataManager = {
         
         try {
             const data = JSON.parse(stored);
-            // Check if manual price is less than 1 hour old
             const age = Date.now() - data.timestamp;
             if (age > 60 * 60 * 1000) {
-                // Too old, remove it
                 localStorage.removeItem('manual_doge_price');
                 return null;
             }
@@ -462,7 +561,6 @@ const DataManager = {
         };
         localStorage.setItem('manual_doge_price', JSON.stringify(data));
         
-        // Update immediately
         this.cache.currentPrice = {
             price: price,
             change24h: 0,
@@ -482,9 +580,7 @@ const DataManager = {
         localStorage.removeItem('manual_doge_price');
         this.dataSource = 'unknown';
         
-        // Reload data from APIs
         this.getCurrentPrice().then(() => {
-            // Refresh the page data
             if (window.loadMarketData) {
                 window.loadMarketData();
             }
@@ -502,18 +598,14 @@ window.setManualPrice = function() {
         return;
     }
     
-    // Set the manual price
     DataManager.setManualPrice(price);
     
-    // Update the display
     if (window.loadMarketData) {
         window.loadMarketData();
     }
     
-    // Show confirmation
     alert(`✅ Manual price set to $${price.toFixed(5)}\n\nThis will be used for all calculations until cleared or expires in 1 hour.`);
     
-    // Clear the input
     input.value = '';
 };
 
