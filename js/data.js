@@ -618,3 +618,4 @@ window.clearManualPrice = function() {
 
 // Export for use in other modules
 window.DataManager = DataManager;
+
