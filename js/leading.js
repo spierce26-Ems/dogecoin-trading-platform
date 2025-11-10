@@ -326,39 +326,14 @@ const LeadingIndicators = {
     },
 
     // ==================== BITCOIN CORRELATION ====================
-    async fetchBitcoinData() {
+      async fetchBitcoinData() {
         try {
             console.log('Fetching Bitcoin data...');
             
             // Fetch BTC price from Binance
             const response = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT');
-            
-            if (!response.ok) throw new Error('BTC API failed');
-            
-            const data = await response.json();
-            
-            this.data.bitcoinCorrelation = {
-                price: parseFloat(data.lastPrice),
-                change24h: parseFloat(data.priceChangePercent),
-                volume: parseFloat(data.volume),
-                isBreakingUp: parseFloat(data.priceChangePercent) > 5,
-                isBreakingDown: parseFloat(data.priceChangePercent) < -5,
-                keyLevels: this.checkBTCKeyLevels(parseFloat(data.lastPrice))
-            };
-            
-            console.log('✅ Bitcoin:', this.data.bitcoinCorrelation.price);
-        } catch (error) {
-            console.warn('Could not fetch Bitcoin data:', error.message);
-            this.data.bitcoinCorrelation = {
-                price: 0,
-                change24h: 0,
-                volume: 0,
-                isBreakingUp: false,
-                isBreakingDown: false,
-                keyLevels: { above: false, below: false }
-            };
-        }
-    },
+            ...
+
 
     checkBTCKeyLevels(price) {
         const levels = [30000, 35000, 40000, 45000, 50000, 55000, 60000, 65000, 70000];
