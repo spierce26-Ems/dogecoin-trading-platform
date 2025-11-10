@@ -9,7 +9,27 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Initialize tab navigation
     initializeTabs();
     
-    undefined
+    // Load and display current market data
+    await loadMarketData();
+    
+    // Initialize modules in sequence to ensure data dependencies
+    try {
+        // First, initialize modules that don't depend on others
+        await TradeTracker.initialize();
+        
+        // Then initialize indicators and leading indicators (they can run in parallel)
+        await Promise.all([
+            IndicatorsManager.initialize(),
+            LeadingIndicators.initialize()
+        ]);
+        
+        // Finally, initialize signals (depends on both data and leading indicators)
+        await SignalsManager.initialize();
+        
+        console.log('✅ All modules initialized successfully');
+    } catch (error) {
+        console.error('❌ Module initialization error:', error);
+    }
     
     // Set up periodic updates (every 5 minutes)
     setInterval(loadMarketData, 5 * 60 * 1000);
